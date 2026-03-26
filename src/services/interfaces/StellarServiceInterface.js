@@ -107,6 +107,11 @@ class StellarServiceInterface {
     void _publicKey;
     throw new Error('getInflationDestination() must be implemented');
   }
+
+  async simulateTransaction(_xdr) {
+    void _xdr;
+    throw new Error('simulateTransaction() must be implemented');
+  }
 }
 
 module.exports = StellarServiceInterface;
