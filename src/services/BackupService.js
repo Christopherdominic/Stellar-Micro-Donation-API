@@ -12,7 +12,6 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { encrypt, decrypt } = require('../utils/encryption');
 const log = require('../utils/log');
 
 const DB_PATH = path.join(__dirname, '../../data/stellar_donations.db');
