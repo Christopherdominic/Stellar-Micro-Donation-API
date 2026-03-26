@@ -18,7 +18,6 @@
 const Database = require('../utils/database');
 const WebhookService = require('./WebhookService');
 const { SCHEDULE_STATUS, DONATION_FREQUENCIES } = require('../constants');
-const Database = require('../utils/database');
 const log = require('../utils/log');
 const { revokeExpiredDeprecatedKeys } = require('../models/apiKeys');
 const {
