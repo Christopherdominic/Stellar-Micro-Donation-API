@@ -20,6 +20,7 @@ const streamRoutes = require('./stream');
 const transactionRoutes = require('./transaction');
 const apiKeysRoutes = require('./apiKeys');
 const recurringDonationRoutes = require('./recurringDonation');
+const assetRoutes = require('./assets');
 const feesRoutes = require('./fees');
 const featureFlagsAdminRoutes = require('./admin/featureFlags');
 const createFeeBumpRouter = require('./admin/feeBump');
@@ -31,13 +32,7 @@ const webhooksRoutes = require('./webhooks');
 const campaignsRoutes = require('./campaigns');
 const offersRoutes = require('./offers');
 const tagsRoutes = require('./tags');
-const { metricsMiddleware, registry } = require('../utils/metrics');
-const requireApiKey = require('../middleware/apiKey');
-const { requireAdmin } = require('../middleware/rbac');
-const authRoutes = require('./auth');
-const exportsRoutes = require('./exports');
-const channelsRoutes = require('./channels');
-const { createGraphQLRouter, attachSubscriptionServer } = require('../graphql');
+const leaderboardRoutes = require('./leaderboard');
 const { errorHandler, notFoundHandler } = require('../middleware/errorHandler');
 const logger = require('../middleware/logger');
 const { attachUserRole } = require('../middleware/rbac');
@@ -54,6 +49,8 @@ const serviceContainer = require('../config/serviceContainer');
 const { payloadSizeLimiter } = require('../middleware/payloadSizeLimiter');
 const { createCorsMiddleware } = require('../middleware/cors');
 const { responseFormatterMiddleware } = require('../utils/responseFormatter');
+const trackQuotaUsage = require('../middleware/quotaTracker');
+const { startQuotaResetJob } = require('../jobs/quotaResetJob');
 const { createDeduplicationMiddleware } = require('../middleware/deduplication');
 const {
   logStartupDiagnostics,
@@ -161,6 +158,9 @@ app.use(require('../middleware/suspiciousPatternDetection'));
 // Attach user role from authentication (must be before routes)
 app.use(attachUserRole());
 
+// Track API quota usage (must be after authentication)
+app.use(trackQuotaUsage);
+
 // Prometheus request duration instrumentation
 app.use(metricsMiddleware);
 
@@ -176,6 +176,7 @@ app.use(createDeduplicationMiddleware());
 app.use('/wallets', walletRoutes);
 app.use('/donations', donationRoutes);
 app.use('/donations/recurring', recurringDonationRoutes);
+app.use('/assets', assetRoutes);
 app.use('/stats', statsRoutes);
 app.use('/stream', streamRoutes);
 app.use('/transactions', transactionRoutes);
@@ -197,10 +198,7 @@ app.use('/webhooks', webhooksRoutes);
 app.use('/campaigns', campaignsRoutes);
 app.use('/offers', offersRoutes);
 app.use('/tags', tagsRoutes);
-app.use('/auth', authRoutes);
-app.use('/exports', exportsRoutes);
-app.use('/channels', channelsRoutes);
-app.use('/graphql', createGraphQLRouter());
+app.use('/leaderboard', leaderboardRoutes);
 
 // Exchange rates endpoint
 app.get('/exchange-rates', async (req, res) => {
@@ -462,6 +460,10 @@ async function startServer() {
       recurringDonationScheduler.start();
       reconciliationService.start();
       auditLogRetentionService.start();
+      
+      // Start quota reset job
+      const stopQuotaResetJob = startQuotaResetJob();
+      server.stopQuotaResetJob = stopQuotaResetJob;
 
       runCleanup(); // Run once on startup
     const cleanupInterval = setInterval(runCleanup, 24 * 60 * 60 * 1000);
@@ -478,6 +480,16 @@ async function startServer() {
       const { startCleanup } = require('../utils/replayDetector');
       const replayConfig = require('../config/replayDetection');
       replayCleanupTimer = startCleanup(replayDetectionMiddleware.trackingStore, replayConfig);
+
+      // Initialize Leaderboard SSE for real-time updates
+      try {
+        const LeaderboardSSE = require('../services/LeaderboardSSE');
+        LeaderboardSSE.initLeaderboardSSE();
+      } catch (err) {
+        log.error('APP', 'Failed to initialize LeaderboardSSE', {
+          error: err.message,
+        });
+      }
 
       log.info('APP', 'API started', {
         port: PORT,
@@ -526,6 +538,12 @@ async function startServer() {
           recurringDonationScheduler.stop();
           reconciliationService.stop();
           auditLogRetentionService.stop();
+          
+          // Stop quota reset job
+          if (server.stopQuotaResetJob) {
+            server.stopQuotaResetJob();
+            log.info("SHUTDOWN", "Quota reset job stopped");
+          }
           
           try {
             await networkStatusService.shutdown();
