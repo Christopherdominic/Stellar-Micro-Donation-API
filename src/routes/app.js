@@ -29,6 +29,7 @@ const matchingProgramsAdminRoutes = require('./admin/matchingPrograms');
 const networkRoutes = require('./network');
 const webhooksRoutes = require('./webhooks');
 const campaignsRoutes = require('./campaigns');
+const tiersRoutes = require('./tiers');
 const offersRoutes = require('./offers');
 const tagsRoutes = require('./tags');
 const leaderboardRoutes = require('./leaderboard');
@@ -183,6 +184,7 @@ app.use('/admin/transactions', (req, res, next) => {
 app.use('/network', networkRoutes);
 app.use('/webhooks', webhooksRoutes);
 app.use('/campaigns', campaignsRoutes);
+app.use('/tiers', tiersRoutes);
 app.use('/offers', offersRoutes);
 app.use('/tags', tagsRoutes);
 app.use('/leaderboard', leaderboardRoutes);
